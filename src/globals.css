@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Global resets can live here. Optionally import existing src styles.
+:root {
+}
+*/
+
+html, body {
+  height: 100%;
+}
