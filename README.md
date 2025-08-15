@@ -10,3 +10,6 @@ This seems like a pretty basic project but what makes this interesting is that i
 - add more pitch ideas
 - analyze user created pitches and provide feedback via pull requests
 - find associated opportunities
+
+### Diagram
+![Diagram of Repo + Actions + AI working together](diagram.png)

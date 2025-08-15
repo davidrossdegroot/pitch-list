@@ -4,14 +4,12 @@ This project is a web application that contains a list of major problems and the
 
 ## Folder Structure
 
-- `/src`: Contains the source code for the frontend.
 - `/pitches`: Contains markdown files for pitches
 - `/problems`: Contains markdown files for problems
 
 ## Libraries and Frameworks
 
-- React and Tailwind CSS for the frontend using NextJS.
-- There is no backend and pitches and problems are associated via information in the markdown files.
+- Just Markdown
 
 ## Coding Standards
 
@@ -106,9 +104,3 @@ Links to relevant research, tools, or prior art.
 ## Contributors
 Names / handles of people working on this pitch.
 ```
-
-## UI guidelines
-- The application should be responsive and accessible.
-- Use a consistent color scheme and typography throughout the app.
-- Provide clear feedback for user actions (e.g., loading indicators, success messages).
-- Ensure all interactive elements are easily tappable/clickable.
