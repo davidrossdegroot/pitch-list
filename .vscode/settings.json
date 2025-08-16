@@ -1,0 +1,6 @@
+{
+  "ruby.rubocop.onSave": false,
+  "ruby.rubocop.suppressRubocopWarnings": false,
+  "rubyLsp.formatter": "auto",
+  "problems.decorations.enabled": false,
+}

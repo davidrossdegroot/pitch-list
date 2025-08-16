@@ -1,3 +1,11 @@
+---
+id: urban-trash
+title: Urban Trash
+region_scope: auto
+tags: [environment]
+updated_at: 2025-08-16
+---
+
 # Problem: Urban Trash
 
 ## Overview
