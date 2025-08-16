@@ -1,0 +1,27 @@
+name: Lint (Standard)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  ruby-standardrb:
+    name: Ruby — standardrb
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+      - name: Run standardrb
+        run: bundle exec standardrb --no-fix
+      - name: Run RSpec
+        run: bundle exec rspec --format documentation
