@@ -18,6 +18,10 @@ REGION = ENV.fetch("REGION", "Global")
 OPENAI_API_KEY = ENV.fetch("OPENAI_API_KEY")
 
 MODEL = ENV.fetch("OPENAI_MODEL", "gpt-4o-mini") # any model that supports tool-calling is fine
+MAX_TOKENS_PER_RUN = 50_000
+
+# Global token usage tracker
+@total_tokens_used = 0
 
 PITCH_SCHEMA = {
   "type" => "object",
@@ -125,6 +129,12 @@ def http_json(uri, headers: {}, body: nil, method: :get)
 end
 
 def openai_chat(messages:, tools: nil, tool_choice: nil, response_format: nil)
+  # Check if we're approaching the token limit
+  if @total_tokens_used >= MAX_TOKENS_PER_RUN
+    warn "[token_limit] Reached maximum tokens (#{@total_tokens_used}/#{MAX_TOKENS_PER_RUN}). Stopping to prevent overuse."
+    raise "Token limit exceeded"
+  end
+
   url = "https://api.openai.com/v1/chat/completions"
   headers = {"Authorization" => "Bearer #{OPENAI_API_KEY}", "Content-Type" => "application/json"}
   payload = {
@@ -135,9 +145,25 @@ def openai_chat(messages:, tools: nil, tool_choice: nil, response_format: nil)
   payload[:tools] = tools if tools
   payload[:tool_choice] = tool_choice if tool_choice
   payload[:response_format] = response_format if response_format
+  
   code, body = http_json(url, headers: headers, body: payload.to_json, method: :post)
   raise "OpenAI error #{code}: #{body}" unless code.between?(200, 299)
-  JSON.parse(body)
+  
+  response = JSON.parse(body)
+  
+  # Track token usage from the response
+  if response["usage"]
+    tokens_used = response["usage"]["total_tokens"] || 0
+    @total_tokens_used += tokens_used
+    warn "[tokens] Used #{tokens_used} tokens this call, #{@total_tokens_used} total"
+    
+    # Warn when approaching limit
+    if @total_tokens_used > MAX_TOKENS_PER_RUN * 0.8
+      warn "[token_warning] Approaching token limit (#{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
+    end
+  end
+  
+  response
 end
 
 # --- simple “tools” the model can call ---
@@ -176,6 +202,10 @@ TOOLS = [
 def run_with_tools(messages)
   # First pass: allow the model to call tools
   resp = openai_chat(messages: messages, tools: TOOLS, tool_choice: "auto")
+  
+  # Add a counter to prevent infinite loops
+  tool_call_count = 0
+  max_tool_calls = 10
 
   loop do
     msg = resp.dig("choices", 0, "message") || {}
@@ -185,6 +215,13 @@ def run_with_tools(messages)
     messages << msg
 
     break if calls.empty?
+    
+    # Prevent infinite loops
+    tool_call_count += calls.length
+    if tool_call_count > max_tool_calls
+      warn "[warning] Stopping after #{tool_call_count} tool calls to prevent infinite loop"
+      break
+    end
 
     # For each tool call, run the function locally and append a tool message
     calls.each do |tc|
@@ -214,6 +251,7 @@ def run_with_tools(messages)
         Output ONLY valid JSON with this exact top-level shape:
          {"pitches":[<pitch>, ...]}
          Do not output a single pitch at the top level; wrap it under "pitches".
+         Do not generate fake URLs. Use real government and grant portal URLs only.
       SYS
     }
     ],
@@ -228,9 +266,44 @@ def tool_invoke(name, args)
   when "web_search"
     q = "#{args["query"]} #{args["region"]}"
     warn "[web_search] #{q}"
-    # At this point, plug in your search API if you want.
-    # For now, just return a placeholder JSON array with the query text.
-    [{query: q, note: "real URLs would go here"}].to_json
+    
+    # Provide some real, commonly available opportunity URLs
+    # This prevents fake URLs while giving the AI something to work with
+    real_opportunities = [
+      {
+        title: "Grants.gov - Federal Grant Opportunities",
+        url: "https://www.grants.gov/",
+        description: "Primary source for federal grants in the US"
+      },
+      {
+        title: "EPA Environmental Justice Grants",
+        url: "https://www.epa.gov/environmentaljustice/environmental-justice-grants",
+        description: "EPA grants for environmental and community health"
+      },
+      {
+        title: "DC Government Grants and Funding",
+        url: "https://dc.gov/service/grants-and-funding",
+        description: "Local DC government funding opportunities"
+      },
+      {
+        title: "HUD Community Development Grants",
+        url: "https://www.hud.gov/program_offices/comm_planning/communitydevelopment",
+        description: "Housing and Urban Development community grants"
+      },
+      {
+        title: "CDC Community Health Grants",
+        url: "https://www.cdc.gov/grants/",
+        description: "Centers for Disease Control community health funding"
+      }
+    ]
+    
+    {
+      status: "real_opportunities_provided",
+      message: "Providing real government grant portals and opportunity sites",
+      query: q,
+      opportunities: real_opportunities
+    }.to_json
+    
   when "http_get"
     url = args["url"]
     warn "[http_get] #{url}"
@@ -302,18 +375,29 @@ system_prompt = <<~SYS
   - Cite at least 2 reputable, recent sources per pitch.
   - Prefer 6-week projects with clear deliverables and success metrics.
   - Output strictly valid JSON. No extra commentary.
+  - CRITICAL: Only use real, verifiable URLs. Do not generate fake or example URLs.
+  - If you cannot find specific opportunities, use general government grant portals.
   Additional rules:
   - Proactively search for **opportunities** in the region: grants, RFPs, challenges, rebates, pilots, procurement notices.
   - Each pitch MUST include an "opportunities" array (≥1) with fields:
     type, name, url, and when available: sponsor, amount, deadline, eligibility, notes.
   - Favor opportunities with upcoming deadlines or active cycles; include "deadline".
+  - For Washington DC, prefer: grants.gov, dc.gov, EPA, HUD, DOT, or other federal agency sites.
 SYS
 
 messages = [{role: "system", content: system_prompt}]
 
 problems.each do |pr|
+  # Check token limit before processing each problem
+  if @total_tokens_used >= MAX_TOKENS_PER_RUN
+    warn "[token_limit] Reached token limit. Skipping remaining problems."
+    break
+  end
+
   current_problem_id = pr["id"]
   today = Date.today.iso8601
+  
+  warn "[processing] Problem: #{current_problem_id} (tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
 
   system_prompt = <<~SYS
     You are a cautious research agent generating region-specific 6-week project pitches.
@@ -322,6 +406,9 @@ problems.each do |pr|
     Rules:
     - Include "problem_id" and "region" exactly as provided.
     - ≥ 2 recent, relevant sources per pitch.
+    - IMPORTANT: If web search is not available, use well-known, real government websites and grant portals.
+    - DO NOT generate fake or example URLs. Use real, verifiable sources only.
+    - For opportunities, prefer known grant portals like grants.gov, federal agency sites, or local government pages.
   SYS
 
   user_prompt = <<~USR
@@ -338,23 +425,36 @@ problems.each do |pr|
     {role: "user", content: user_prompt}
   ]
 
-  _msgs, resp = run_with_tools(messages)
-  content = resp.dig("choices", 0, "message", "content").to_s
-  data = begin
-    JSON.parse(content)
-  rescue
-    {}
-  end
-  pitches = Array(data["pitches"])
-  pitches.each do |pitch|
-    pitch["problem_id"] ||= current_problem_id
-    pitch["region"] ||= REGION
-    coerce_pitch!(pitch, today: today)
-    JSON::Validator.validate!(PITCH_SCHEMA, pitch)
-    path = write_pitch(pitch)
-    puts "[write] #{path}"
-  rescue JSON::Schema::ValidationError => e
-    warn "[reject] schema error (#{current_problem_id}): #{e.message}"
-    warn "[debug] pitch:\n#{JSON.pretty_generate(pitch)}" if ENV["DEBUG"] == "1"
+  begin
+    _msgs, resp = run_with_tools(messages)
+    content = resp.dig("choices", 0, "message", "content").to_s
+    data = begin
+      JSON.parse(content)
+    rescue
+      {}
+    end
+    pitches = Array(data["pitches"])
+    pitches.each do |pitch|
+      pitch["problem_id"] ||= current_problem_id
+      pitch["region"] ||= REGION
+      coerce_pitch!(pitch, today: today)
+      JSON::Validator.validate!(PITCH_SCHEMA, pitch)
+      path = write_pitch(pitch)
+      puts "[write] #{path}"
+    rescue JSON::Schema::ValidationError => e
+      warn "[reject] schema error (#{current_problem_id}): #{e.message}"
+      warn "[debug] pitch:\n#{JSON.pretty_generate(pitch)}" if ENV["DEBUG"] == "1"
+    end
+  rescue => e
+    if e.message.include?("Token limit exceeded")
+      warn "[token_limit] Stopping due to token limit: #{e.message}"
+      break
+    else
+      warn "[error] Failed to process problem #{current_problem_id}: #{e.message}"
+      next
+    end
   end
 end
+
+# Print final token usage summary
+warn "[summary] Total tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN}"
