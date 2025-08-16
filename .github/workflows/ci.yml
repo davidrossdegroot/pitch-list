@@ -21,7 +21,7 @@ jobs:
         with:
           ruby-version: .ruby-version
           bundler-cache: true
-
       - name: Run standardrb
-        run: |
-          bundle exec standardrb --no-fix
+        run: bundle exec standardrb --no-fix
+      - name: Run RSpec
+        run: bundle exec rspec --format documentation

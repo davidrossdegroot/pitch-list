@@ -10,5 +10,6 @@ gem "json"
 gem "json-schema"
 gem "erb"
 gem "octokit"
+gem "rspec"
 gem "ruby-openai"   # optional, makes API call simpler
 gem "standard"
