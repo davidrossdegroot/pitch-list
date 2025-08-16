@@ -6,6 +6,7 @@ GEM
     ast (2.4.3)
     bigdecimal (3.2.2)
     byebug (12.0.0)
+    diff-lcs (1.6.2)
     dotenv (3.1.8)
     erb (5.0.2)
     event_stream_parser (1.0.0)
@@ -39,6 +40,19 @@ GEM
     racc (1.8.1)
     rainbow (3.1.1)
     regexp_parser (2.11.2)
+    rspec (3.13.1)
+      rspec-core (~> 3.13.0)
+      rspec-expectations (~> 3.13.0)
+      rspec-mocks (~> 3.13.0)
+    rspec-core (3.13.5)
+      rspec-support (~> 3.13.0)
+    rspec-expectations (3.13.5)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-mocks (3.13.5)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-support (3.13.4)
     rubocop (1.75.8)
       json (~> 2.3)
       language_server-protocol (~> 3.17.0.2)
@@ -93,6 +107,7 @@ DEPENDENCIES
   json
   json-schema
   octokit
+  rspec
   ruby-openai
   standard
 

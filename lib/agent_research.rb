@@ -11,6 +11,7 @@ require "net/http"
 require "uri"
 require "dotenv/load"
 require "byebug"
+require_relative "normalize_pitch"
 
 # If you already use the ruby-openai gem, uncomment:
 # require "openai"
@@ -23,24 +24,26 @@ MODEL = ENV.fetch("OPENAI_MODEL", "gpt-4o-mini") # any model that supports tool-
 
 PITCH_SCHEMA = {
   "type" => "object",
-  "required" => %w[title problem_id region impact_estimate effort_estimate confidence summary scope rationale_bullets risks success_metrics six_week_plan sources],
+  "required" => %w[title problem_id region impact_estimate effort_estimate confidence summary scope rationale_bullets risks success_metrics six_week_plan sources opportunities],
   "properties" => {
-    "title" => {"type" => "string"},
-    "problem_id" => {"type" => "string"},
-    "region" => {"type" => "string"},
-    "impact_estimate" => {"enum" => ["High", "Medium", "Low"]},
-    "effort_estimate" => {"enum" => ["High", "Medium", "Low"]},
-    "confidence" => {"type" => "number", "minimum" => 0, "maximum" => 1},
-    "summary" => {"type" => "string"},
-    "scope" => {"type" => "array", "items" => {"type" => "string"}},
-    "rationale_bullets" => {"type" => "array", "items" => {"type" => "string"}},
-    "risks" => {"type" => "array", "items" => {"type" => "string"}},
-    "success_metrics" => {"type" => "array", "items" => {"type" => "string"}},
-    "six_week_plan" => {"type" => "array", "items" => {"type" => "string"}},
-    "sources" => {
+    # ...existing...
+    "opportunities" => {
       "type" => "array",
-      "items" => {"type" => "object", "required" => %w[title url accessed],
-                  "properties" => {"title" => {"type" => "string"}, "url" => {"type" => "string"}, "accessed" => {"type" => "string"}}}
+      "minItems" => 1,
+      "items" => {
+        "type" => "object",
+        "required" => %w[type name url],
+        "properties" => {
+          "type" => {"enum" => ["grant", "rfp", "challenge", "rebate", "pilot", "procurement", "other"]},
+          "name" => {"type" => "string"},
+          "url" => {"type" => "string"},
+          "sponsor" => {"type" => "string"},
+          "amount" => {"type" => "string"},     # keep string to avoid currency parsing headaches
+          "deadline" => {"type" => "string"},     # ISO-8601 or human; you can tighten later
+          "eligibility" => {"type" => "string"},
+          "notes" => {"type" => "string"}
+        }
+      }
     }
   }
 }
@@ -48,7 +51,7 @@ PITCH_SCHEMA = {
 # If you prefer strict JSON at the end (no tool calls), set RESPONSE_FORMAT to force JSON
 RESPONSE_FORMAT = {"type" => "json_object"}
 
-TEMPLATE = ERB.new <<~'MD'
+TEMPLATE = ERB.new <<~MD
   ---
   id: <%= slug %>
   problem_id: <%= pitch["problem_id"] %>
@@ -56,42 +59,50 @@ TEMPLATE = ERB.new <<~'MD'
   impact_estimate: <%= pitch["impact_estimate"] %>
   effort_estimate: <%= pitch["effort_estimate"] %>
   timebox_weeks: 6
-  confidence: <%= format('%.2f', pitch["confidence"]) %>
+  confidence: <%=  pitch["confidence"].is_a?(Numeric) ? format('%.2f', pitch["confidence"]) : pitch["confidence"] %>
   owner: unassigned
   status: proposed
   created_by: bot@nightly
   updated_at: <%= Date.today.iso8601 %>
   sources:
-  <% (pitch["sources"] || []).each do |s| %>
-    - title: "<%= s["title"].to_s.gsub('"','\"') %>"
-      url: "<%= s["url"] %>"
-      accessed: "<%= s["accessed"] %>"
+  <% pitch["sources"].each do |s| %>
+  - title: "<%= s["title"] %>"
+    url: "<%= s["url"] %>"
+    accessed: "<%= s["accessed"] %>"
   <% end %>
   ---
-  
+
   ## Summary
   <%= pitch["summary"] %>
-  
+
   ## Scope
   <% (pitch["scope"] || []).each do |it| %>
   - <%= it %>
   <% end %>
-  
+
   ## Data / Rationale
   <% (pitch["rationale_bullets"] || []).each do |it| %>
   - <%= it %>
   <% end %>
-  
+
   ## Risks & Mitigations
   <% (pitch["risks"] || []).each do |it| %>
   - <%= it %>
   <% end %>
-  
+
   ## Success Metrics
   <% (pitch["success_metrics"] || []).each do |it| %>
   - <%= it %>
   <% end %>
-  
+
+  ## Opportunities (region-specific)
+  <% (pitch["opportunities"] || []).each do |o| %>
+  - **<%= o["type"] %>**: <%= o["name"] %> — <%= o["sponsor"] %><% if o["amount"] %> (Amount: <%= o["amount"] %>)<% end %><% if o["deadline"] %> — *Deadline:* <%= o["deadline"] %><% end %>
+    - Link: <%= o["url"] %><% if o["eligibility"] %>
+    - Eligibility: <%= o["eligibility"] %><% end %><% if o["notes"] %>
+    - Notes: <%= o["notes"] %><% end %>
+  <% end %>
+
   ## Next Steps (6-week pitch)
   <% (pitch["six_week_plan"] || []).each do |it| %>
   - <%= it %>
@@ -236,15 +247,34 @@ end
 
 def render_markdown(pitch)
   slug = "#{slugify(pitch["title"])}-#{slugify(pitch["region"])}"
-  TEMPLATE.result_with_hash(pitch: pitch, slug: slug)
+  begin
+    TEMPLATE.result_with_hash(pitch: pitch, slug: slug)
+  rescue => e
+    # Log a concise, useful message and return nil so caller can decide how to proceed
+    warn "[render_markdown] error rendering pitch #{slug}: #{e.class}: #{e.message}"
+    begin
+      # Truncate pitch JSON to avoid huge logs
+      pitch_json = JSON.generate(pitch)
+      warn "[render_markdown] pitch #{pitch_json}"
+    rescue
+      warn "[render_markdown] (unable to serialize pitch for logging)"
+    end
+    warn e.backtrace.take(6).join("\n")
+    nil
+  end
 end
 
 def write_pitch(pitch, out_dir: "pitches")
-  byebug
   slug = "#{slugify(pitch["title"])}-#{slugify(pitch["region"])}"
   path = File.join(out_dir, "#{slug}.md")
   FileUtils.mkdir_p(File.dirname(path))
-  File.write(path, render_markdown(pitch))
+  content = render_markdown(pitch)
+  if content.nil?
+    warn "[skip] not writing #{path} because render_markdown failed"
+    return nil
+  end
+
+  File.write(path, content)
   path
 end
 
@@ -275,6 +305,11 @@ system_prompt = <<~SYS
   - Cite at least 2 reputable, recent sources per pitch.
   - Prefer 6-week projects with clear deliverables and success metrics.
   - Output strictly valid JSON. No extra commentary.
+  Additional rules:
+  - Proactively search for **opportunities** in the region: grants, RFPs, challenges, rebates, pilots, procurement notices.
+  - Each pitch MUST include an "opportunities" array (≥1) with fields:
+    type, name, url, and when available: sponsor, amount, deadline, eligibility, notes.
+  - Favor opportunities with upcoming deadlines or active cycles; include "deadline".
 SYS
 
 messages = [{role: "system", content: system_prompt}]
@@ -296,7 +331,9 @@ problems.each do |pr|
     Region: #{REGION}
     Problem ID: #{current_problem_id}
     Date: #{today}
-    Task: Search for **opportunities** in this region to address this problem and produce 1–3 pitches.
+
+    Task: Search for **opportunities** (grants/RFPs/challenges/rebates/pilots) in this region that map to this problem,
+    then produce 1–3 pitches. Each pitch must include ≥2 supporting sources AND at least one opportunity in "opportunities".
   USR
 
   messages = [
@@ -312,12 +349,11 @@ problems.each do |pr|
     {}
   end
   pitches = Array(data["pitches"])
-  byebug
   pitches.each do |pitch|
     pitch["problem_id"] ||= current_problem_id
     pitch["region"] ||= REGION
+    coerce_pitch!(pitch, today: today)
     JSON::Validator.validate!(PITCH_SCHEMA, pitch)
-    byebug
     path = write_pitch(pitch)
     puts "[write] #{path}"
   rescue JSON::Schema::ValidationError => e
