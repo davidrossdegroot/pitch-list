@@ -18,4 +18,4 @@ This seems like a pretty basic project but what makes this interesting is that i
 - Fork this repo
 - In your github action settings, create two environment variables: 
   - `REGION` - can be a [clear environment variable](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables). Can be set to any region you want to focus on. E.g. "Chicago", "Upper East Side, NYC", "Nepal" etc.
-  - `OPENAI_API_KEY` - Should be a [github action repository secret](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets) so others can't steal your api key and use it. Get this from the [Open AI API Dashboard](https://platform.openai.com/api-keyshttps://platform.openai.com/api-keys).
+  - `OPENAI_API_KEY` - Should be a [github action repository secret](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets) so others can't steal your api key and use it. Get this from the [Open AI API Dashboard](https://platform.openai.com/api-keys).
