@@ -49,43 +49,53 @@ PITCH_SCHEMA = {
 RESPONSE_FORMAT = {"type" => "json_object"}
 
 TEMPLATE = ERB.new <<~'MD'
-  ---
-  id: <%= slug %>
-  problem_id: <%= pitch["problem_id"] %>
-  region: <%= pitch["region"] %>
-  impact_estimate: <%= pitch["impact_estimate"] %>
-  effort_estimate: <%= pitch["effort_estimate"] %>
-  timebox_weeks: 6
-  confidence: <%= format('%.2f', pitch["confidence"]) %>
-  owner: unassigned
-  status: proposed
-  created_by: bot@nightly
-  updated_at: <%= Date.today.iso8601 %>
-  sources:
-  <% pitch["sources"].each do |s| -%>
-    - title: "<%= s["title"].to_s.gsub('"','\"') %>"
-      url: "<%= s["url"] %>"
-      accessed: "<%= s["accessed"] %>"
-  <% end -%>
-  ---
+---
+id: <%= slug %>
+problem_id: <%= pitch["problem_id"] %>
+region: <%= pitch["region"] %>
+impact_estimate: <%= pitch["impact_estimate"] %>
+effort_estimate: <%= pitch["effort_estimate"] %>
+timebox_weeks: 6
+confidence: <%= format('%.2f', pitch["confidence"]) %>
+owner: unassigned
+status: proposed
+created_by: bot@nightly
+updated_at: <%= Date.today.iso8601 %>
+sources:
+<% (pitch["sources"] || []).each do |s| %>
+  - title: "<%= s["title"].to_s.gsub('"','\"') %>"
+    url: "<%= s["url"] %>"
+    accessed: "<%= s["accessed"] %>"
+<% end %>
+---
 
-  ## Summary
-  <%= pitch["summary"] %>
+## Summary
+<%= pitch["summary"] %>
 
-  ## Scope
-  <% pitch["scope"].each { |it| puts "- #{it}" } %>
+## Scope
+<% (pitch["scope"] || []).each do |it| %>
+- <%= it %>
+<% end %>
 
-  ## Data / Rationale
-  <% pitch["rationale_bullets"].each { |it| puts "- #{it}" } %>
+## Data / Rationale
+<% (pitch["rationale_bullets"] || []).each do |it| %>
+- <%= it %>
+<% end %>
 
-  ## Risks & Mitigations
-  <% pitch["risks"].each { |it| puts "- #{it}" } %>
+## Risks & Mitigations
+<% (pitch["risks"] || []).each do |it| %>
+- <%= it %>
+<% end %>
 
-  ## Success Metrics
-  <% pitch["success_metrics"].each { |it| puts "- #{it}" } %>
+## Success Metrics
+<% (pitch["success_metrics"] || []).each do |it| %>
+- <%= it %>
+<% end %>
 
-  ## Next Steps (6-week pitch)
-  <% pitch["six_week_plan"].each { |it| puts "- #{it}" } %>
+## Next Steps (6-week pitch)
+<% (pitch["six_week_plan"] || []).each do |it| %>
+- <%= it %>
+<% end %>
 MD
 
 def slugify(str)
@@ -221,6 +231,7 @@ def render_markdown(pitch)
 end
 
 def write_pitch(pitch, out_dir: "pitches")
+  byebug
   slug = "#{slugify(pitch["title"])}-#{slugify(pitch["region"])}"
   path = File.join(out_dir, "#{slug}.md")
   FileUtils.mkdir_p(File.dirname(path))
@@ -293,6 +304,7 @@ problems.each do |pr|
     pitch["problem_id"] ||= current_problem_id
     pitch["region"]     ||= REGION
     JSON::Validator.validate!(PITCH_SCHEMA, pitch)
+    byebug
     path = write_pitch(pitch)
     puts "[write] #{path}"
   rescue JSON::Schema::ValidationError => e
