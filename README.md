@@ -1,5 +1,5 @@
 ## Problems
-This repo contains a list of major problems for a particular area. The intent is to be a place to go to find "work" to do in that area that is meaningful.
+This repo contains a list of major problems for a particular region. The intent is to be a place to go to find "work" to do in that area that is meaningful and targets a particular problem for a particular region of the world.
 
 ### Definitions
 - *Problem*: An issue that Washington DC faces such as climate change or mental health concern or poverty.
@@ -13,3 +13,9 @@ This seems like a pretty basic project but what makes this interesting is that i
 
 ### Diagram
 ![Diagram of Repo + Actions + AI working together](diagram.png)
+
+## Usage
+- Fork this repo
+- In your github action settings, create two environment variables: 
+  - `REGION` - can be a [clear environment variable](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables). Can be set to any region you want to focus on. E.g. "Chicago", "Upper East Side, NYC", "Nepal" etc.
+  - `OPENAI_API_KEY` - Should be a [github action repository secret](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets) so others can't steal your api key and use it. Get this from the [Open AI API Dashboard](https://platform.openai.com/api-keys).
