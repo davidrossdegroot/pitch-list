@@ -13,9 +13,6 @@ require "dotenv/load"
 require "byebug"
 require_relative "normalize_pitch"
 
-# If you already use the ruby-openai gem, uncomment:
-# require "openai"
-
 # ---------- config ----------
 REGION = ENV.fetch("REGION", "Global")
 OPENAI_API_KEY = ENV.fetch("OPENAI_API_KEY")
@@ -59,7 +56,7 @@ TEMPLATE = ERB.new <<~MD
   impact_estimate: <%= pitch["impact_estimate"] %>
   effort_estimate: <%= pitch["effort_estimate"] %>
   timebox_weeks: 6
-  confidence: <%=  pitch["confidence"].is_a?(Numeric) ? format('%.2f', pitch["confidence"]) : pitch["confidence"] %>
+  confidence: <%= pitch["confidence"] %>
   owner: unassigned
   status: proposed
   created_by: bot@nightly

@@ -27,6 +27,11 @@ def coerce_pitch!(pitch, today: Date.today.iso8601)
   pitch["effort_estimate"] = normalize_enum(pitch["effort_estimate"])
   pitch["confidence"] = normalize_confidence(pitch["confidence"])
 
+  # ensure confidence is formatted consistently for template rendering
+  if pitch["confidence"].is_a?(Numeric)
+    pitch["confidence"] = format("%.2f", pitch["confidence"]).to_f
+  end
+
   # arrays: wrap strings
   %w[scope rationale_bullets risks success_metrics six_week_plan].each do |k|
     v = pitch[k]

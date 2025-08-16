@@ -38,6 +38,24 @@ RSpec.describe :coerce_pitch! do
     expect(p4["confidence"]).to be_within(0.0001).of(0.5)
   end
 
+  it "formats numeric confidence values to 2 decimal places" do
+    p1 = {"confidence" => 0.123456789}
+    p2 = {"confidence" => 0.7}
+    p3 = {"confidence" => 1}
+    p4 = {"confidence" => "0.999999"}
+
+    coerce_pitch!(p1, today: today)
+    coerce_pitch!(p2, today: today)
+    coerce_pitch!(p3, today: today)
+    coerce_pitch!(p4, today: today)
+
+    # All should be formatted to 2 decimal places and converted back to float
+    expect(p1["confidence"]).to eq(0.12)
+    expect(p2["confidence"]).to eq(0.70)
+    expect(p3["confidence"]).to eq(1.00)
+    expect(p4["confidence"]).to eq(1.00)
+  end
+
   it "wraps scalar array fields, flattens, removes nils and stringifies values" do
     pitch = {
       "scope" => "single",
