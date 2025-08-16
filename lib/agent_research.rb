@@ -49,53 +49,53 @@ PITCH_SCHEMA = {
 RESPONSE_FORMAT = {"type" => "json_object"}
 
 TEMPLATE = ERB.new <<~'MD'
----
-id: <%= slug %>
-problem_id: <%= pitch["problem_id"] %>
-region: <%= pitch["region"] %>
-impact_estimate: <%= pitch["impact_estimate"] %>
-effort_estimate: <%= pitch["effort_estimate"] %>
-timebox_weeks: 6
-confidence: <%= format('%.2f', pitch["confidence"]) %>
-owner: unassigned
-status: proposed
-created_by: bot@nightly
-updated_at: <%= Date.today.iso8601 %>
-sources:
-<% (pitch["sources"] || []).each do |s| %>
-  - title: "<%= s["title"].to_s.gsub('"','\"') %>"
-    url: "<%= s["url"] %>"
-    accessed: "<%= s["accessed"] %>"
-<% end %>
----
-
-## Summary
-<%= pitch["summary"] %>
-
-## Scope
-<% (pitch["scope"] || []).each do |it| %>
-- <%= it %>
-<% end %>
-
-## Data / Rationale
-<% (pitch["rationale_bullets"] || []).each do |it| %>
-- <%= it %>
-<% end %>
-
-## Risks & Mitigations
-<% (pitch["risks"] || []).each do |it| %>
-- <%= it %>
-<% end %>
-
-## Success Metrics
-<% (pitch["success_metrics"] || []).each do |it| %>
-- <%= it %>
-<% end %>
-
-## Next Steps (6-week pitch)
-<% (pitch["six_week_plan"] || []).each do |it| %>
-- <%= it %>
-<% end %>
+  ---
+  id: <%= slug %>
+  problem_id: <%= pitch["problem_id"] %>
+  region: <%= pitch["region"] %>
+  impact_estimate: <%= pitch["impact_estimate"] %>
+  effort_estimate: <%= pitch["effort_estimate"] %>
+  timebox_weeks: 6
+  confidence: <%= format('%.2f', pitch["confidence"]) %>
+  owner: unassigned
+  status: proposed
+  created_by: bot@nightly
+  updated_at: <%= Date.today.iso8601 %>
+  sources:
+  <% (pitch["sources"] || []).each do |s| %>
+    - title: "<%= s["title"].to_s.gsub('"','\"') %>"
+      url: "<%= s["url"] %>"
+      accessed: "<%= s["accessed"] %>"
+  <% end %>
+  ---
+  
+  ## Summary
+  <%= pitch["summary"] %>
+  
+  ## Scope
+  <% (pitch["scope"] || []).each do |it| %>
+  - <%= it %>
+  <% end %>
+  
+  ## Data / Rationale
+  <% (pitch["rationale_bullets"] || []).each do |it| %>
+  - <%= it %>
+  <% end %>
+  
+  ## Risks & Mitigations
+  <% (pitch["risks"] || []).each do |it| %>
+  - <%= it %>
+  <% end %>
+  
+  ## Success Metrics
+  <% (pitch["success_metrics"] || []).each do |it| %>
+  - <%= it %>
+  <% end %>
+  
+  ## Next Steps (6-week pitch)
+  <% (pitch["six_week_plan"] || []).each do |it| %>
+  - <%= it %>
+  <% end %>
 MD
 
 def slugify(str)
@@ -170,7 +170,7 @@ def run_with_tools(messages)
   resp = openai_chat(messages: messages, tools: TOOLS, tool_choice: "auto")
 
   loop do
-    msg   = resp.dig("choices", 0, "message") || {}
+    msg = resp.dig("choices", 0, "message") || {}
     calls = msg["tool_calls"] || []
 
     # Always append the assistant message we just received
@@ -181,7 +181,11 @@ def run_with_tools(messages)
     # For each tool call, run the function locally and append a tool message
     calls.each do |tc|
       name = tc.dig("function", "name")
-      args = JSON.parse(tc.dig("function", "arguments") || "{}") rescue {}
+      args = begin
+        JSON.parse(tc.dig("function", "arguments") || "{}")
+      rescue
+        {}
+      end
       result = tool_invoke(name, args)  # must return a String
       messages << {
         role: "tool",
@@ -198,9 +202,14 @@ def run_with_tools(messages)
   # Finalization pass: force strict JSON output (no tools now)
   finalize = openai_chat(
     messages: messages + [
-      { role: "system", content: "Now return ONLY the final JSON object as specified earlier." }
+      {role: "system", content: <<~SYS
+        Output ONLY valid JSON with this exact top-level shape:
+         {"pitches":[<pitch>, ...]}
+         Do not output a single pitch at the top level; wrap it under "pitches".
+      SYS
+    }
     ],
-    response_format: { type: "json_object" }
+    response_format: {type: "json_object"}
   )
 
   [messages, finalize]
@@ -291,18 +300,22 @@ problems.each do |pr|
   USR
 
   messages = [
-    { role: "system", content: system_prompt },
-    { role: "user",   content: user_prompt }
+    {role: "system", content: system_prompt},
+    {role: "user", content: user_prompt}
   ]
 
   _msgs, resp = run_with_tools(messages)
   content = resp.dig("choices", 0, "message", "content").to_s
-  data = JSON.parse(content) rescue {}
+  data = begin
+    JSON.parse(content)
+  rescue
+    {}
+  end
   pitches = Array(data["pitches"])
-
+  byebug
   pitches.each do |pitch|
     pitch["problem_id"] ||= current_problem_id
-    pitch["region"]     ||= REGION
+    pitch["region"] ||= REGION
     JSON::Validator.validate!(PITCH_SCHEMA, pitch)
     byebug
     path = write_pitch(pitch)
