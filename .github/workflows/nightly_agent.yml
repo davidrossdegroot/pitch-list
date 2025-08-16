@@ -1,0 +1,41 @@
+name: Nightly Agent (Ruby)
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  REGION: ${{ vars.REGION || 'Global' }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Run agent script
+        run: ruby lib/agent_research.rb
+
+      - name: Commit & PR
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            BRANCH="bot/ruby-agent-${GITHUB_RUN_ID}"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git checkout -b "$BRANCH"
+            git add pitches/** || true
+            git commit -m "Ruby agent: new pitches for ${REGION}"
+            git push -u origin "$BRANCH"
+            gh pr create --title "Ruby agent pitches for ${REGION}" --body "Auto-generated." --label "pitch,bot,${REGION}"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
