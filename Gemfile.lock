@@ -5,6 +5,8 @@ GEM
       public_suffix (>= 2.0.2, < 7.0)
     ast (2.4.3)
     bigdecimal (3.2.2)
+    byebug (12.0.0)
+    dotenv (3.1.8)
     erb (5.0.2)
     event_stream_parser (1.0.0)
     faraday (2.13.4)
@@ -85,6 +87,8 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  byebug
+  dotenv
   erb
   json
   json-schema
