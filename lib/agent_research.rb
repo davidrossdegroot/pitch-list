@@ -261,47 +261,97 @@ def run_with_tools(messages)
   [messages, finalize]
 end
 
+def generate_contextual_opportunities(query, region)
+  # Provide guidance to AI about where to look for opportunities
+  # rather than hardcoding specific URLs
+  guidance = {
+    federal_portals: [
+      "grants.gov - primary federal grant search portal",
+      "Federal agency websites (EPA, CDC, HUD, DOT, etc.) based on topic relevance"
+    ],
+    regional_guidance: get_regional_guidance(region),
+    topic_guidance: get_topic_guidance(query),
+    instructions: "Use real government websites and established grant portals. Do not generate fake URLs."
+  }
+  
+  guidance
+end
+
+def get_regional_guidance(region)
+  case region.downcase
+  when /washington.*dc|district.*columbia/
+    [
+      "dc.gov - DC government grants and funding portal",
+      "DC agency websites (DOEE, DHCD, etc.)",
+      "Federal agencies with DC-specific programs"
+    ]
+  when /california/
+    [
+      "ca.gov - California state grants portal",
+      "California agency websites"
+    ]
+  when /new york/
+    [
+      "ny.gov - New York state funding opportunities",
+      "NYC.gov for city-specific programs"
+    ]
+  else
+    [
+      "State government websites (.gov domains)",
+      "Local city/county government portals",
+      "Regional foundations and community organizations"
+    ]
+  end
+end
+
+def get_topic_guidance(query)
+  guidance = []
+  query_lower = query.downcase
+  
+  if query_lower.match?(/environment|trash|waste|clean|green|sustainability/)
+    guidance << "EPA.gov for environmental grants and programs"
+    guidance << "Environmental justice and community health funding"
+  end
+  
+  if query_lower.match?(/health|wellness|medical|children|kids|screen.*time/)
+    guidance << "CDC.gov for community health grants"
+    guidance << "HRSA.gov for health professional programs"
+    guidance << "NIH.gov for health research funding"
+  end
+  
+  if query_lower.match?(/housing|community|development|urban/)
+    guidance << "HUD.gov for housing and community development"
+    guidance << "USDA Rural Development programs"
+  end
+  
+  if query_lower.match?(/education|school|learning|digital/)
+    guidance << "ed.gov for Department of Education grants"
+    guidance << "NSF.gov for STEM education funding"
+  end
+  
+  if query_lower.match?(/transportation|mobility|transit/)
+    guidance << "transportation.gov for DOT funding programs"
+    guidance << "FTA and FHWA grant programs"
+  end
+  
+  guidance.empty? ? ["Browse relevant federal agency websites"] : guidance
+end
+
 def tool_invoke(name, args)
   case name
   when "web_search"
     q = "#{args["query"]} #{args["region"]}"
     warn "[web_search] #{q}"
     
-    # Provide some real, commonly available opportunity URLs
-    # This prevents fake URLs while giving the AI something to work with
-    real_opportunities = [
-      {
-        title: "Grants.gov - Federal Grant Opportunities",
-        url: "https://www.grants.gov/",
-        description: "Primary source for federal grants in the US"
-      },
-      {
-        title: "EPA Environmental Justice Grants",
-        url: "https://www.epa.gov/environmentaljustice/environmental-justice-grants",
-        description: "EPA grants for environmental and community health"
-      },
-      {
-        title: "DC Government Grants and Funding",
-        url: "https://dc.gov/service/grants-and-funding",
-        description: "Local DC government funding opportunities"
-      },
-      {
-        title: "HUD Community Development Grants",
-        url: "https://www.hud.gov/program_offices/comm_planning/communitydevelopment",
-        description: "Housing and Urban Development community grants"
-      },
-      {
-        title: "CDC Community Health Grants",
-        url: "https://www.cdc.gov/grants/",
-        description: "Centers for Disease Control community health funding"
-      }
-    ]
+    # Provide guidance for where to find opportunities rather than hardcoded URLs
+    guidance = generate_contextual_opportunities(args["query"], args["region"])
     
     {
-      status: "real_opportunities_provided",
-      message: "Providing real government grant portals and opportunity sites",
+      status: "opportunity_guidance_provided",
+      message: "Providing guidance on where to find relevant funding opportunities",
       query: q,
-      opportunities: real_opportunities
+      guidance: guidance,
+      instructions: "Use this guidance to identify real government funding opportunities. Always use actual .gov websites and established grant portals."
     }.to_json
     
   when "http_get"
@@ -406,9 +456,11 @@ problems.each do |pr|
     Rules:
     - Include "problem_id" and "region" exactly as provided.
     - ≥ 2 recent, relevant sources per pitch.
-    - IMPORTANT: If web search is not available, use well-known, real government websites and grant portals.
-    - DO NOT generate fake or example URLs. Use real, verifiable sources only.
-    - For opportunities, prefer known grant portals like grants.gov, federal agency sites, or local government pages.
+    - IMPORTANT: When you call web_search, you'll get guidance on where to look for opportunities.
+    - Use this guidance to identify REAL government funding opportunities with actual URLs.
+    - DO NOT generate fake or example URLs. Only use real .gov websites and established portals.
+    - For opportunities, you are responsible for finding and providing actual grant programs, RFPs, etc.
+    - Each opportunity must have a real URL that someone could actually visit.
   SYS
 
   user_prompt = <<~USR
