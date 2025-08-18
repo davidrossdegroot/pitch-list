@@ -146,7 +146,7 @@ def openai_chat(messages:, tools: nil, tool_choice: nil, response_format: nil)
   # Check if we're approaching the token limit
   if @total_tokens_used >= MAX_TOKENS_PER_RUN
     warn "[token_limit] Reached maximum tokens (#{@total_tokens_used}/#{MAX_TOKENS_PER_RUN}). Stopping to prevent overuse."
-    raise "Token limit exceeded"
+    raise "Token limit exceeded: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN} tokens used"
   end
 
   url = "https://api.openai.com/v1/chat/completions"
