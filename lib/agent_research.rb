@@ -22,21 +22,6 @@ MAX_TOKENS_PER_RUN = 50_000
 
 # Global token usage tracker
 @total_tokens_used = 0
-# Global token usage tracker (thread-safe)
-$total_tokens_used = 0
-$total_tokens_used_mutex = Mutex.new
-
-def increment_total_tokens_used(n)
-  $total_tokens_used_mutex.synchronize do
-    $total_tokens_used += n
-  end
-end
-
-def total_tokens_used
-  $total_tokens_used_mutex.synchronize do
-    $total_tokens_used
-  end
-end
 PITCH_SCHEMA = {
   "type" => "object",
   "required" => %w[title problem_id region impact_estimate effort_estimate confidence summary scope rationale_bullets risks success_metrics six_week_plan sources opportunities],
@@ -234,6 +219,23 @@ def run_with_tools(messages)
     tool_call_count += calls.length
     if tool_call_count > max_tool_calls
       warn "[warning] Stopping after #{tool_call_count} tool calls to prevent infinite loop"
+
+      # Still need to respond to current tool calls to avoid OpenAI API error
+      calls.each do |tc|
+        name = tc.dig("function", "name")
+        args = begin
+          JSON.parse(tc.dig("function", "arguments") || "{}")
+        rescue
+          {}
+        end
+        result = tool_invoke(name, args)
+        messages << {
+          role: "tool",
+          tool_call_id: tc["id"],
+          name: name,
+          content: result
+        }
+      end
       break
     end
 
@@ -335,116 +337,119 @@ def write_pitch(pitch, out_dir: "pitches")
 end
 
 # ---------- run ----------
-problems = Dir.glob("problems/**/problem.md").map do |p|
-  id = File.read(p)[/\bid:\s*([a-zA-Z0-9\-_]+)/, 1]
-  {"id" => id, "path" => p} if id
-end.compact
+# Only run the main script if this file is executed directly, not when required by tests
+if __FILE__ == $0
+  problems = Dir.glob("problems/**/problem.md").map do |p|
+    id = File.read(p)[/\bid:\s*([a-zA-Z0-9\-_]+)/, 1]
+    {"id" => id, "path" => p} if id
+  end.compact
 
-if problems.empty?
-  warn "[info] no problems found"
-  exit 0
-end
-
-today = Date.today.iso8601
-
-system_prompt = <<~SYS
-  You are a research agent generating region-specific 6-week project pitches.
-
-  Return ONLY JSON with shape:
-  {"pitches":[<pitch>, ...]}
-
-  Each <pitch> MUST conform to this JSON schema:
-  #{JSON.pretty_generate(PITCH_SCHEMA)}
-
-  Rules:
-  - Include "problem_id" and "region" exactly as given in the task.
-  - Cite at least 2 reputable, recent sources per pitch.
-  - Prefer 6-week projects with clear deliverables and success metrics.
-  - Output strictly valid JSON. No extra commentary.
-  - CRITICAL: Only use real, verifiable URLs. Do not generate fake or example URLs.
-  
-  Opportunity Research:
-  - You are responsible for finding REAL funding opportunities relevant to each problem and region.
-  - Research actual grants, RFPs, challenges, rebates, pilots, and procurement opportunities.
-  - Consider all funding sources: federal agencies, state/local government, foundations, corporate programs.
-  - Each pitch MUST include an "opportunities" array (≥1) with real funding sources.
-  - Include specific details: type, name, sponsor, amount, deadline, eligibility, notes when available.
-  - Use your knowledge of government agencies and funding landscape - be creative and thorough.
-SYS
-
-messages = [{role: "system", content: system_prompt}]
-
-problems.each do |pr|
-  # Check token limit before processing each problem
-  if @total_tokens_used >= MAX_TOKENS_PER_RUN
-    warn "[token_limit] Reached token limit. Skipping remaining problems."
-    break
+  if problems.empty?
+    warn "[info] no problems found"
+    exit 0
   end
 
-  current_problem_id = pr["id"]
   today = Date.today.iso8601
-
-  warn "[processing] Problem: #{current_problem_id} (tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
 
   system_prompt = <<~SYS
     You are a research agent generating region-specific 6-week project pitches.
-    Return ONLY JSON at the end. During reasoning you may call tools. Schema:
+
+    Return ONLY JSON with shape:
+    {"pitches":[<pitch>, ...]}
+
+    Each <pitch> MUST conform to this JSON schema:
     #{JSON.pretty_generate(PITCH_SCHEMA)}
+
     Rules:
-    - Include "problem_id" and "region" exactly as provided.
-    - ≥ 2 recent, relevant sources per pitch.
-    - You are responsible for identifying REAL government funding opportunities.
-    - Research and find actual grants, RFPs, challenges, rebates, and funding programs.
-    - Use your knowledge of government agencies, foundations, and funding bodies.
-    - Every URL must be real and verifiable - no fake or example URLs.
-    - Think broadly about funding sources: federal, state, local, foundations, corporate programs.
-    - Each opportunity should include specific details like sponsor, amount, deadline when known.
+    - Include "problem_id" and "region" exactly as given in the task.
+    - Cite at least 2 reputable, recent sources per pitch.
+    - Prefer 6-week projects with clear deliverables and success metrics.
+    - Output strictly valid JSON. No extra commentary.
+    - CRITICAL: Only use real, verifiable URLs. Do not generate fake or example URLs.
+    
+    Opportunity Research:
+    - You are responsible for finding REAL funding opportunities relevant to each problem and region.
+    - Research actual grants, RFPs, challenges, rebates, pilots, and procurement opportunities.
+    - Consider all funding sources: federal agencies, state/local government, foundations, corporate programs.
+    - Each pitch MUST include an "opportunities" array (≥1) with real funding sources.
+    - Include specific details: type, name, sponsor, amount, deadline, eligibility, notes when available.
+    - Use your knowledge of government agencies and funding landscape - be creative and thorough.
   SYS
 
-  user_prompt = <<~USR
-    Region: #{REGION}
-    Problem ID: #{current_problem_id}
-    Date: #{today}
+  messages = [{role: "system", content: system_prompt}]
 
-    Task: Search for **opportunities** (grants/RFPs/challenges/rebates/pilots) in this region that map to this problem,
-    then produce 1–3 pitches. Each pitch must include ≥2 supporting sources AND at least one opportunity in "opportunities".
-  USR
-
-  messages = [
-    {role: "system", content: system_prompt},
-    {role: "user", content: user_prompt}
-  ]
-
-  begin
-    _msgs, resp = run_with_tools(messages)
-    content = resp.dig("choices", 0, "message", "content").to_s
-    data = begin
-      JSON.parse(content)
-    rescue
-      {}
-    end
-    pitches = Array(data["pitches"])
-    pitches.each do |pitch|
-      pitch["problem_id"] ||= current_problem_id
-      pitch["region"] ||= REGION
-      coerce_pitch!(pitch, today: today)
-      JSON::Validator.validate!(PITCH_SCHEMA, pitch)
-      path = write_pitch(pitch)
-      puts "[write] #{path}"
-    rescue JSON::Schema::ValidationError => e
-      warn "[reject] schema error (#{current_problem_id}): #{e.message}"
-      warn "[debug] pitch:\n#{JSON.pretty_generate(pitch)}" if ENV["DEBUG"] == "1"
-    end
-  rescue => e
-    if e.message.include?("Token limit exceeded")
-      warn "[token_limit] Stopping due to token limit: #{e.message}"
+  problems.each do |pr|
+    # Check token limit before processing each problem
+    if @total_tokens_used >= MAX_TOKENS_PER_RUN
+      warn "[token_limit] Reached token limit. Skipping remaining problems."
       break
-    else
-      warn "[error] Failed to process problem #{current_problem_id}: #{e.message}"
-      next
+    end
+
+    current_problem_id = pr["id"]
+    today = Date.today.iso8601
+
+    warn "[processing] Problem: #{current_problem_id} (tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
+
+    system_prompt = <<~SYS
+      You are a research agent generating region-specific 6-week project pitches.
+      Return ONLY JSON at the end. During reasoning you may call tools. Schema:
+      #{JSON.pretty_generate(PITCH_SCHEMA)}
+      Rules:
+      - Include "problem_id" and "region" exactly as provided.
+      - ≥ 2 recent, relevant sources per pitch.
+      - You are responsible for identifying REAL government funding opportunities.
+      - Research and find actual grants, RFPs, challenges, rebates, and funding programs.
+      - Use your knowledge of government agencies, foundations, and funding bodies.
+      - Every URL must be real and verifiable - no fake or example URLs.
+      - Think broadly about funding sources: federal, state, local, foundations, corporate programs.
+      - Each opportunity should include specific details like sponsor, amount, deadline when known.
+    SYS
+
+    user_prompt = <<~USR
+      Region: #{REGION}
+      Problem ID: #{current_problem_id}
+      Date: #{today}
+
+      Task: Search for **opportunities** (grants/RFPs/challenges/rebates/pilots) in this region that map to this problem,
+      then produce 1–3 pitches. Each pitch must include ≥2 supporting sources AND at least one opportunity in "opportunities".
+    USR
+
+    messages = [
+      {role: "system", content: system_prompt},
+      {role: "user", content: user_prompt}
+    ]
+
+    begin
+      _msgs, resp = run_with_tools(messages)
+      content = resp.dig("choices", 0, "message", "content").to_s
+      data = begin
+        JSON.parse(content)
+      rescue
+        {}
+      end
+      pitches = Array(data["pitches"])
+      pitches.each do |pitch|
+        pitch["problem_id"] ||= current_problem_id
+        pitch["region"] ||= REGION
+        coerce_pitch!(pitch, today: today)
+        JSON::Validator.validate!(PITCH_SCHEMA, pitch)
+        path = write_pitch(pitch)
+        puts "[write] #{path}"
+      rescue JSON::Schema::ValidationError => e
+        warn "[reject] schema error (#{current_problem_id}): #{e.message}"
+        warn "[debug] pitch:\n#{JSON.pretty_generate(pitch)}" if ENV["DEBUG"] == "1"
+      end
+    rescue => e
+      if e.message.include?("Token limit exceeded")
+        warn "[token_limit] Stopping due to token limit: #{e.message}"
+        break
+      else
+        warn "[error] Failed to process problem #{current_problem_id}: #{e.message}"
+        next
+      end
     end
   end
-end
 
-# Print final token usage summary
-warn "[summary] Total tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN}"
+  # Print final token usage summary
+  warn "[summary] Total tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN}"
+end  # End of if __FILE__ == $0
