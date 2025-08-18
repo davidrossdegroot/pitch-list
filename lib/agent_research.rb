@@ -261,95 +261,19 @@ def run_with_tools(messages)
   [messages, finalize]
 end
 
-def generate_contextual_opportunities(query, region)
-  # Provide guidance to AI about where to look for opportunities
-  # rather than hardcoding specific URLs
-  {
-    federal_portals: [
-      "grants.gov - primary federal grant search portal",
-      "Federal agency websites (EPA, CDC, HUD, DOT, etc.) based on topic relevance"
-    ],
-    regional_guidance: get_regional_guidance(region),
-    topic_guidance: get_topic_guidance(query),
-    instructions: "Use real government websites and established grant portals. Do not generate fake URLs."
-  }
-end
-
-def get_regional_guidance(region)
-  case region.downcase
-  when /washington.*dc|district.*columbia/
-    [
-      "dc.gov - DC government grants and funding portal",
-      "DC agency websites (DOEE, DHCD, etc.)",
-      "Federal agencies with DC-specific programs"
-    ]
-  when /california/
-    [
-      "ca.gov - California state grants portal",
-      "California agency websites"
-    ]
-  when /new york/
-    [
-      "ny.gov - New York state funding opportunities",
-      "NYC.gov for city-specific programs"
-    ]
-  else
-    [
-      "State government websites (.gov domains)",
-      "Local city/county government portals",
-      "Regional foundations and community organizations"
-    ]
-  end
-end
-
-def get_topic_guidance(query)
-  guidance = []
-  query_lower = query.downcase
-
-  if query_lower.match?(/environment|trash|waste|clean|green|sustainability/)
-    guidance << "EPA.gov for environmental grants and programs"
-    guidance << "Environmental justice and community health funding"
-  end
-
-  if query_lower.match?(/health|wellness|medical|children|kids|screen.*time/)
-    guidance << "CDC.gov for community health grants"
-    guidance << "HRSA.gov for health professional programs"
-    guidance << "NIH.gov for health research funding"
-  end
-
-  if query_lower.match?(/housing|community|development|urban/)
-    guidance << "HUD.gov for housing and community development"
-    guidance << "USDA Rural Development programs"
-  end
-
-  if query_lower.match?(/education|school|learning|digital/)
-    guidance << "ed.gov for Department of Education grants"
-    guidance << "NSF.gov for STEM education funding"
-  end
-
-  if query_lower.match?(/transportation|mobility|transit/)
-    guidance << "transportation.gov for DOT funding programs"
-    guidance << "FTA and FHWA grant programs"
-  end
-
-  guidance.empty? ? ["Browse relevant federal agency websites"] : guidance
-end
-
 def tool_invoke(name, args)
   case name
   when "web_search"
     q = "#{args["query"]} #{args["region"]}"
     warn "[web_search] #{q}"
 
-    # Provide guidance for where to find opportunities rather than hardcoded URLs
-    guidance = generate_contextual_opportunities(args["query"], args["region"])
-
+    # Let the AI know that web search isn't implemented, but encourage it to use its knowledge
+    # of real government funding sources relevant to the query and region
     {
-      status: "opportunity_guidance_provided",
-      message: "Providing guidance on where to find relevant funding opportunities",
+      status: "web_search_unavailable",
+      message: "Web search not implemented. Use your knowledge of real government funding opportunities.",
       query: q,
-      guidance: guidance,
-      instructions: "Use this guidance to identify real government funding opportunities. Always use actual .gov websites and established grant portals."
+      instructions: "Based on the query '#{args["query"]}' in #{args["region"]}, identify real government grants, RFPs, and funding opportunities. Use actual .gov websites and established grant portals. Do not generate fake URLs."
     }.to_json
 
   when "http_get"
@@ -410,7 +334,7 @@ end
 today = Date.today.iso8601
 
 system_prompt = <<~SYS
-  You are a cautious research agent generating region-specific 6-week project pitches.
+  You are a research agent generating region-specific 6-week project pitches.
 
   Return ONLY JSON with shape:
   {"pitches":[<pitch>, ...]}
@@ -424,13 +348,14 @@ system_prompt = <<~SYS
   - Prefer 6-week projects with clear deliverables and success metrics.
   - Output strictly valid JSON. No extra commentary.
   - CRITICAL: Only use real, verifiable URLs. Do not generate fake or example URLs.
-  - If you cannot find specific opportunities, use general government grant portals.
-  Additional rules:
-  - Proactively search for **opportunities** in the region: grants, RFPs, challenges, rebates, pilots, procurement notices.
-  - Each pitch MUST include an "opportunities" array (≥1) with fields:
-    type, name, url, and when available: sponsor, amount, deadline, eligibility, notes.
-  - Favor opportunities with upcoming deadlines or active cycles; include "deadline".
-  - For Washington DC, prefer: grants.gov, dc.gov, EPA, HUD, DOT, or other federal agency sites.
+  
+  Opportunity Research:
+  - You are responsible for finding REAL funding opportunities relevant to each problem and region.
+  - Research actual grants, RFPs, challenges, rebates, pilots, and procurement opportunities.
+  - Consider all funding sources: federal agencies, state/local government, foundations, corporate programs.
+  - Each pitch MUST include an "opportunities" array (≥1) with real funding sources.
+  - Include specific details: type, name, sponsor, amount, deadline, eligibility, notes when available.
+  - Use your knowledge of government agencies and funding landscape - be creative and thorough.
 SYS
 
 messages = [{role: "system", content: system_prompt}]
@@ -448,17 +373,18 @@ problems.each do |pr|
   warn "[processing] Problem: #{current_problem_id} (tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
 
   system_prompt = <<~SYS
-    You are a cautious research agent generating region-specific 6-week project pitches.
+    You are a research agent generating region-specific 6-week project pitches.
     Return ONLY JSON at the end. During reasoning you may call tools. Schema:
     #{JSON.pretty_generate(PITCH_SCHEMA)}
     Rules:
     - Include "problem_id" and "region" exactly as provided.
     - ≥ 2 recent, relevant sources per pitch.
-    - IMPORTANT: When you call web_search, you'll get guidance on where to look for opportunities.
-    - Use this guidance to identify REAL government funding opportunities with actual URLs.
-    - DO NOT generate fake or example URLs. Only use real .gov websites and established portals.
-    - For opportunities, you are responsible for finding and providing actual grant programs, RFPs, etc.
-    - Each opportunity must have a real URL that someone could actually visit.
+    - You are responsible for identifying REAL government funding opportunities.
+    - Research and find actual grants, RFPs, challenges, rebates, and funding programs.
+    - Use your knowledge of government agencies, foundations, and funding bodies.
+    - Every URL must be real and verifiable - no fake or example URLs.
+    - Think broadly about funding sources: federal, state, local, foundations, corporate programs.
+    - Each opportunity should include specific details like sponsor, amount, deadline when known.
   SYS
 
   user_prompt = <<~USR
