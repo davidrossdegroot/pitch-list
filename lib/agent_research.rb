@@ -167,7 +167,7 @@ def openai_chat(messages:, tools: nil, tool_choice: nil, response_format: nil)
 
   # Track token usage from the response
   if response["usage"]
-    tokens_used = response["usage"]["total_tokens"] || 0
+    tokens_used = response["usage"]&.[]("total_tokens") || 0
     @total_tokens_used += tokens_used
     warn "[tokens] Used #{tokens_used} tokens this call, #{@total_tokens_used} total"
 
