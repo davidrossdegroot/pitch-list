@@ -22,7 +22,21 @@ MAX_TOKENS_PER_RUN = 50_000
 
 # Global token usage tracker
 @total_tokens_used = 0
+# Global token usage tracker (thread-safe)
+$total_tokens_used = 0
+$total_tokens_used_mutex = Mutex.new
 
+def increment_total_tokens_used(n)
+  $total_tokens_used_mutex.synchronize do
+    $total_tokens_used += n
+  end
+end
+
+def total_tokens_used
+  $total_tokens_used_mutex.synchronize do
+    $total_tokens_used
+  end
+end
 PITCH_SCHEMA = {
   "type" => "object",
   "required" => %w[title problem_id region impact_estimate effort_estimate confidence summary scope rationale_bullets risks success_metrics six_week_plan sources opportunities],
