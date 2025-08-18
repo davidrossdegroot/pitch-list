@@ -145,24 +145,24 @@ def openai_chat(messages:, tools: nil, tool_choice: nil, response_format: nil)
   payload[:tools] = tools if tools
   payload[:tool_choice] = tool_choice if tool_choice
   payload[:response_format] = response_format if response_format
-  
+
   code, body = http_json(url, headers: headers, body: payload.to_json, method: :post)
   raise "OpenAI error #{code}: #{body}" unless code.between?(200, 299)
-  
+
   response = JSON.parse(body)
-  
+
   # Track token usage from the response
   if response["usage"]
     tokens_used = response["usage"]["total_tokens"] || 0
     @total_tokens_used += tokens_used
     warn "[tokens] Used #{tokens_used} tokens this call, #{@total_tokens_used} total"
-    
+
     # Warn when approaching limit
     if @total_tokens_used > MAX_TOKENS_PER_RUN * 0.8
       warn "[token_warning] Approaching token limit (#{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
     end
   end
-  
+
   response
 end
 
@@ -202,7 +202,7 @@ TOOLS = [
 def run_with_tools(messages)
   # First pass: allow the model to call tools
   resp = openai_chat(messages: messages, tools: TOOLS, tool_choice: "auto")
-  
+
   # Add a counter to prevent infinite loops
   tool_call_count = 0
   max_tool_calls = 10
@@ -215,7 +215,7 @@ def run_with_tools(messages)
     messages << msg
 
     break if calls.empty?
-    
+
     # Prevent infinite loops
     tool_call_count += calls.length
     if tool_call_count > max_tool_calls
@@ -264,7 +264,7 @@ end
 def generate_contextual_opportunities(query, region)
   # Provide guidance to AI about where to look for opportunities
   # rather than hardcoding specific URLs
-  guidance = {
+  {
     federal_portals: [
       "grants.gov - primary federal grant search portal",
       "Federal agency websites (EPA, CDC, HUD, DOT, etc.) based on topic relevance"
@@ -273,8 +273,6 @@ def generate_contextual_opportunities(query, region)
     topic_guidance: get_topic_guidance(query),
     instructions: "Use real government websites and established grant portals. Do not generate fake URLs."
   }
-  
-  guidance
 end
 
 def get_regional_guidance(region)
@@ -307,33 +305,33 @@ end
 def get_topic_guidance(query)
   guidance = []
   query_lower = query.downcase
-  
+
   if query_lower.match?(/environment|trash|waste|clean|green|sustainability/)
     guidance << "EPA.gov for environmental grants and programs"
     guidance << "Environmental justice and community health funding"
   end
-  
+
   if query_lower.match?(/health|wellness|medical|children|kids|screen.*time/)
     guidance << "CDC.gov for community health grants"
     guidance << "HRSA.gov for health professional programs"
     guidance << "NIH.gov for health research funding"
   end
-  
+
   if query_lower.match?(/housing|community|development|urban/)
     guidance << "HUD.gov for housing and community development"
     guidance << "USDA Rural Development programs"
   end
-  
+
   if query_lower.match?(/education|school|learning|digital/)
     guidance << "ed.gov for Department of Education grants"
     guidance << "NSF.gov for STEM education funding"
   end
-  
+
   if query_lower.match?(/transportation|mobility|transit/)
     guidance << "transportation.gov for DOT funding programs"
     guidance << "FTA and FHWA grant programs"
   end
-  
+
   guidance.empty? ? ["Browse relevant federal agency websites"] : guidance
 end
 
@@ -342,10 +340,10 @@ def tool_invoke(name, args)
   when "web_search"
     q = "#{args["query"]} #{args["region"]}"
     warn "[web_search] #{q}"
-    
+
     # Provide guidance for where to find opportunities rather than hardcoded URLs
     guidance = generate_contextual_opportunities(args["query"], args["region"])
-    
+
     {
       status: "opportunity_guidance_provided",
       message: "Providing guidance on where to find relevant funding opportunities",
@@ -353,7 +351,7 @@ def tool_invoke(name, args)
       guidance: guidance,
       instructions: "Use this guidance to identify real government funding opportunities. Always use actual .gov websites and established grant portals."
     }.to_json
-    
+
   when "http_get"
     url = args["url"]
     warn "[http_get] #{url}"
@@ -446,7 +444,7 @@ problems.each do |pr|
 
   current_problem_id = pr["id"]
   today = Date.today.iso8601
-  
+
   warn "[processing] Problem: #{current_problem_id} (tokens used: #{@total_tokens_used}/#{MAX_TOKENS_PER_RUN})"
 
   system_prompt = <<~SYS
